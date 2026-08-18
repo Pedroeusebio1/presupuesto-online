@@ -1,0 +1,9 @@
+{
+  "name": "Presupuesto Online",
+  "short_name": "Presupuesto",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070b14",
+  "theme_color": "#070b14",
+  "description": "Presupuesto quincenal con control de tarjetas, cortes y fechas límite."
+}
