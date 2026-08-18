@@ -85,6 +85,11 @@ th { background: #0b1323; color: #8092ad; text-align:left; font-size: 10px; text
 td { border-top: 1px solid var(--line); padding: 8px 10px; }
 td input, td select { width: 100%; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); padding: 7px; }
 td input:focus, td select:focus { outline: none; border-color: #4269a4; background: #0a1427; }
+.money-field { display:flex; align-items:center; gap:5px; border:1px solid transparent; border-radius:8px; padding-left:7px; }
+.money-field span { color:var(--muted); font-size:11px; font-weight:850; white-space:nowrap; }
+td .money-field input { min-width:0; border:0; padding-left:0; }
+.money-field:focus-within { border-color:#4269a4; background:#0a1427; }
+td .money-field input:focus { border:0; background:transparent; }
 input[type="number"] { text-align: right; }
 .status { border: 1px solid var(--line); color: #b9c7d9; background: #0b1323; border-radius: 999px; padding: 6px 9px; font-size: 10px; font-weight: 850; }
 .status.active { color: #9bf0c5; border-color: rgba(61,220,151,.32); background: rgba(12,92,61,.17); }
@@ -117,4 +122,45 @@ input[type="number"] { text-align: right; }
 .empty { padding:18px; color:var(--muted); text-align:center; font-size:12px; }
 .footer-actions { display:flex; flex-wrap:wrap; gap:8px; }
 @media(max-width:1050px){.shell{grid-template-columns:1fr}.sidebar{display:none}.kpis{grid-template-columns:repeat(2,1fr)}.split{grid-template-columns:1fr}.account-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:620px){.main{padding:14px}.kpis{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.alert{grid-template-columns:1fr}.controls{width:100%}.controls>*{flex:1}.account-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){
+  body{min-width:0;overflow-x:hidden}
+  .main{padding:14px}
+  .panel{padding:14px}
+  .kpis{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
+  .field.full{grid-column:auto}
+  .alert{grid-template-columns:1fr}
+  .controls{width:100%}
+  .controls>*{flex:1}
+  .account-grid{grid-template-columns:1fr 1fr}
+  .table-wrap{overflow:visible;border:0}
+  table{display:block;min-width:0}
+  thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+  tbody{display:grid;width:100%;gap:10px}
+  tr[data-id]{display:grid;width:100%;grid-template-columns:minmax(0,1fr) minmax(104px,.72fr) 32px;gap:12px 8px;padding:12px;border:1px solid var(--line);border-radius:13px;background:#0b1425}
+  tr[data-kind="income"]{grid-template-areas:"desc amount delete" "date status status"}
+  tr[data-kind="expense"]{grid-template-areas:"desc amount delete" "account account account" "date date date"}
+  tr[data-kind="payment"]{grid-template-areas:"desc amount delete" "account account account" "date status status"}
+  td{min-width:0;border:0;padding:0}
+  td::before{content:attr(data-label);display:block;margin:0 0 5px;color:var(--muted);font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.45px}
+  .cell-desc{grid-area:desc}
+  .cell-amount{grid-area:amount}
+  .cell-account{grid-area:account}
+  .cell-date{grid-area:date}
+  .cell-status{grid-area:status}
+  .cell-delete{grid-area:delete;align-self:end}
+  .cell-delete::before{display:none}
+  td input,td select{min-height:42px;padding:9px;border-color:var(--line);background:#08111f}
+  td .money-field{min-height:42px;border-color:var(--line);background:#08111f;padding-left:8px}
+  td .money-field input{min-height:40px;padding:9px 6px 9px 0;font-size:12px;font-weight:850;appearance:textfield}
+  td .money-field input::-webkit-inner-spin-button,td .money-field input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  .cell-delete .icon-btn{width:32px;min-height:42px;border:1px solid var(--line);background:#08111f}
+  .cell-status .status{width:100%;min-height:42px}
+}
+@media(max-width:350px){
+  tr[data-id]{grid-template-columns:minmax(0,1fr) minmax(104px,.8fr)}
+  tr[data-kind="income"]{grid-template-areas:"desc amount" "date date" "status delete"}
+  tr[data-kind="expense"]{grid-template-areas:"desc amount" "account account" "date delete"}
+  tr[data-kind="payment"]{grid-template-areas:"desc amount" "account account" "date date" "status delete"}
+  .cell-delete{justify-self:end}
+}

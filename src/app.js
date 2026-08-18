@@ -87,6 +87,10 @@ function accountOptions(selected){
   return state.accounts.map(a=>`<option value="${a.id}" ${a.id===selected?'selected':''}>${esc(a.name)}</option>`).join('');
 }
 
+function amountInput(row){
+  return `<div class="money-field"><span aria-hidden="true">RD$</span><input data-field="amount" aria-label="Monto" type="number" inputmode="decimal" step="0.01" value="${num(row.amount).toFixed(2)}"></div>`;
+}
+
 function render(){
   const p=periodData();
   const [ym,q]=period.split('|');
@@ -174,13 +178,13 @@ function alertHtml(a){
 }
 
 function tableIncome(rows){
-  return `<div class="table-wrap"><table><thead><tr><th>Descripción</th><th>Monto</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr data-kind="income" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td><input data-field="amount" type="number" step="0.01" value="${r.amount}"></td><td><input data-field="date" type="date" value="${r.date||''}"></td><td><button class="status ${r.received?'active':''}" data-toggle="received">${r.received?'Recibido':'Pendiente'}</button></td><td><button class="icon-btn" data-delete>✕</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">Sin ingresos.</td></tr>'}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Descripción</th><th>Monto</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr data-kind="income" data-id="${r.id}"><td class="cell-desc" data-label="Descripción"><input data-field="desc" value="${esc(r.desc)}"></td><td class="cell-amount" data-label="Monto">${amountInput(r)}</td><td class="cell-date" data-label="Fecha"><input data-field="date" type="date" value="${r.date||''}"></td><td class="cell-status" data-label="Estado"><button class="status ${r.received?'active':''}" data-toggle="received">${r.received?'Recibido':'Pendiente'}</button></td><td class="cell-delete"><button class="icon-btn" data-delete aria-label="Eliminar ingreso">✕</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">Sin ingresos.</td></tr>'}</tbody></table></div>`;
 }
 function tableExpenses(rows){
-  return `<div class="table-wrap"><table><thead><tr><th>Descripción</th><th>Monto</th><th>Método</th><th>Fecha</th><th></th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr data-kind="expense" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td><input data-field="amount" type="number" step="0.01" value="${r.amount}"></td><td><select data-field="account">${accountOptions(r.account)}</select></td><td><input data-field="date" type="date" value="${r.date||''}"></td><td><button class="icon-btn" data-delete>✕</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">Sin gastos.</td></tr>'}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Descripción</th><th>Monto</th><th>Método</th><th>Fecha</th><th></th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr data-kind="expense" data-id="${r.id}"><td class="cell-desc" data-label="Descripción"><input data-field="desc" value="${esc(r.desc)}"></td><td class="cell-amount" data-label="Monto">${amountInput(r)}</td><td class="cell-account" data-label="Método"><select data-field="account">${accountOptions(r.account)}</select></td><td class="cell-date" data-label="Fecha"><input data-field="date" type="date" value="${r.date||''}"></td><td class="cell-delete"><button class="icon-btn" data-delete aria-label="Eliminar gasto">✕</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">Sin gastos.</td></tr>'}</tbody></table></div>`;
 }
 function tablePayments(rows){
-  return `<div class="table-wrap"><table><thead><tr><th>Descripción</th><th>Monto</th><th>Cuenta destino</th><th>Fecha límite</th><th>Pagado</th><th></th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr data-kind="payment" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td><input data-field="amount" type="number" step="0.01" value="${r.amount}"></td><td><select data-field="account">${accountOptions(r.account)}</select></td><td><input data-field="due" type="date" value="${r.due||''}"></td><td><button class="status ${r.paid?'active':''}" data-toggle="paid">${r.paid?'Pagado':'Pendiente'}</button></td><td><button class="icon-btn" data-delete>✕</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">Sin pagos.</td></tr>'}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Descripción</th><th>Monto</th><th>Cuenta destino</th><th>Fecha límite</th><th>Pagado</th><th></th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr data-kind="payment" data-id="${r.id}"><td class="cell-desc" data-label="Descripción"><input data-field="desc" value="${esc(r.desc)}"></td><td class="cell-amount" data-label="Monto">${amountInput(r)}</td><td class="cell-account" data-label="Cuenta destino"><select data-field="account">${accountOptions(r.account)}</select></td><td class="cell-date" data-label="Fecha límite"><input data-field="due" type="date" value="${r.due||''}"></td><td class="cell-status" data-label="Estado"><button class="status ${r.paid?'active':''}" data-toggle="paid">${r.paid?'Pagado':'Pendiente'}</button></td><td class="cell-delete"><button class="icon-btn" data-delete aria-label="Eliminar pago">✕</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">Sin pagos.</td></tr>'}</tbody></table></div>`;
 }
 
 function accountsHtml(){
