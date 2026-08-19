@@ -21,13 +21,33 @@ const parseMoney=v=>{
 const accountingNumber=n=>new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(parseMoney(n));
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const account=id=>state.accounts.find(a=>a.id===id);
+const assetAccounts=()=>state.accounts.filter(a=>a.type==='cash'||a.type==='savings');
+const primaryAssetId=(exclude='')=>assetAccounts().find(a=>a.type==='cash'&&a.id!==exclude)?.id||assetAccounts().find(a=>a.id!==exclude)?.id||'';
+const validTransferSource=(id,destination='')=>Boolean(id&&id!==destination&&assetAccounts().some(a=>a.id===id));
 
 function normalize(){
   state.settings||={browserNotifications:false};
   state.statements||=[];
   state.accounts=Array.isArray(state.accounts)?state.accounts:[];
   state.periods||={};
-  Object.values(state.periods).forEach(p=>{p.incomes||=[];p.expenses||=[];p.payments||=[]});
+  const primary=primaryAssetId();
+  Object.values(state.periods).forEach(p=>{
+    p.incomes||=[];p.expenses||=[];p.payments||=[];
+    p.incomes.forEach(x=>{
+      const destination=account(x.account);
+      if(!destination||destination.type==='credit')x.account=primary;
+    });
+    p.payments.forEach(x=>{
+      const destination=account(x.account);
+      if(typeof x.internal!=='boolean'){
+        x.internal=Boolean(primary&&destination&&destination.id!==primary&&(destination.type==='credit'||destination.type==='savings'));
+      }
+      if(x.internal){
+        if(!validTransferSource(x.sourceAccount,x.account))x.sourceAccount=primaryAssetId(x.account);
+        if(!x.sourceAccount)x.internal=false;
+      }else x.sourceAccount='';
+    });
+  });
   saveState(state);
 }
 function data(key=period){if(!state.periods[key])state.periods[key]={incomes:[],expenses:[],payments:[]};return state.periods[key]}
@@ -60,14 +80,31 @@ function accountSummaryForPeriod(a,key,seen=new Set()){
     nextSeen.add(key);
     opening=accountSummaryForPeriod(a,previous,nextSeen).projected;
   }
-  const charges=(p.expenses||[]).filter(x=>x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
-  const payments=(p.payments||[]).filter(x=>x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
-  let projected=a.type==='credit'?opening+charges-payments:a.type==='savings'?opening+payments-charges:opening-payments-charges;
-  if(a.type==='credit')projected=Math.max(0,projected);
+
+  const expenseCharges=(p.expenses||[]).filter(x=>x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
+  const incomeInflows=(p.incomes||[]).filter(x=>x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
+  const incomingTransfers=(p.payments||[]).filter(x=>x.internal&&x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
+  const outgoingTransfers=(p.payments||[]).filter(x=>x.internal&&x.sourceAccount===a.id).reduce((s,x)=>s+num(x.amount),0);
+  const regularPayments=(p.payments||[]).filter(x=>!x.internal&&x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
+
+  let charges=0,payments=0,projected=opening;
+  if(a.type==='credit'){
+    charges=expenseCharges;
+    payments=incomingTransfers+regularPayments;
+    projected=Math.max(0,opening+charges-payments);
+  }else{
+    charges=incomeInflows+incomingTransfers;
+    payments=expenseCharges+regularPayments+outgoingTransfers;
+    projected=opening+charges-payments;
+  }
   return{opening,charges,payments,projected};
 }
 function accountSummary(a){return accountSummaryForPeriod(a,period)}
 function options(selected){return state.accounts.map(a=>`<option value="${a.id}" ${a.id===selected?'selected':''}>${esc(a.name)}</option>`).join('')}
+function assetOptions(selected,exclude=''){
+  const list=assetAccounts().filter(a=>a.id!==exclude);
+  return`${list.length?'<option value="">Selecciona origen</option>':'<option value="">Sin cuenta origen</option>'}${list.map(a=>`<option value="${a.id}" ${a.id===selected?'selected':''}>${esc(a.name)}</option>`).join('')}`;
+}
 function amount(row){return`<div class="money-input"><span>RD$</span><input data-field="amount" data-money type="text" inputmode="decimal" autocomplete="off" value="${accountingNumber(row.amount)}"></div>`}
 function bindMoneyInputs(root=document){
   root.querySelectorAll('[data-money]').forEach(i=>{
@@ -117,9 +154,9 @@ function render(){
 <section class="totals"><div><span>Ingresos</span><b>${money(income)}</b></div><div><span>Pagos / salidas</span><b>${money(payments+direct)}</b></div><div><span>Saldo disponible</span><b class="${free>=0?'good':'bad'}">${money(free)}</b></div></section>
 ${section('income','Ingresos','Todo lo que entra en esta quincena.',incomeTable(p.incomes,income),'+ Ingreso')}
 ${section('expense','Gastos necesarios para esta quincena','Elige con qué pagarás cada gasto.',expenseTable(p.expenses,expenses),'+ Gasto')}
-${section('payment','Pagos','Salidas reales de dinero de esta quincena.',paymentTable(p.payments,payments),'+ Pago')}
+${section('payment','Pagos','Usa “Transferencia interna” cuando el dinero sale de una cuenta tuya hacia otra.',paymentTable(p.payments,payments),'+ Pago')}
 <section class="balance ${free<0?'negative':''}"><div><b>Saldo disponible después de esta quincena</b><span>Ingresos menos pagos y gastos directos</span></div><strong>${money(free)}</strong></section>
-<section class="box"><div class="box-head"><div><h2>Tarjetas y cuentas</h2><p>El balance final anterior pasa automáticamente como balance inicial de la siguiente quincena.</p></div><button id="addAccount">+ Cuenta</button></div>${accountsTable()}</section>
+<section class="box"><div class="box-head"><div><h2>Tarjetas y cuentas</h2><p>Los ingresos aumentan tu cuenta principal y las transferencias internas mueven el dinero entre tus cuentas.</p></div><button id="addAccount">+ Cuenta</button></div>${accountsTable()}</section>
 <footer><button id="copy">Copiar quincena anterior</button><button id="notify">${state.settings.browserNotifications?'Avisos activos':'Activar avisos'}</button><button id="export">Exportar</button><label>Importar<input id="import" type="file" accept=".json" hidden></label><button id="save" class="primary">Guardar</button></footer>
 </main>`;
   bind();
@@ -128,8 +165,8 @@ ${section('payment','Pagos','Salidas reales de dinero de esta quincena.',payment
 function section(kind,title,subtitle,table,button){return`<section class="box"><div class="box-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button data-add="${kind}">${button}</button></div>${table}</section>`}
 function incomeTable(rows,total){return`<div class="table"><table><thead><tr><th>Ingreso</th><th>Monto</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr data-kind="income" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td>${amount(r)}</td><td><input data-field="date" type="date" value="${r.date||''}"></td><td><button class="status ${r.received?'on':''}" data-toggle="received">${r.received?'Recibido':'Pendiente'}</button></td><td><button data-delete>✕</button></td></tr>`).join('')}</tbody><tfoot><tr><td>Total</td><td>${money(total)}</td><td colspan="3"></td></tr></tfoot></table></div>`}
 function expenseTable(rows,total){return`<div class="table"><table><thead><tr><th>Gasto</th><th>Monto</th><th>Método</th><th>Corte</th><th>Pago límite</th><th></th></tr></thead><tbody>${rows.map(r=>{const a=account(r.account);return`<tr data-kind="expense" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td>${amount(r)}</td><td><select data-field="account">${options(r.account)}</select></td><td>${a?.type==='credit'&&a.cutDay?`Día ${a.cutDay}`:'—'}</td><td>${a?.type==='credit'&&a.dueDay?`Día ${a.dueDay}`:'—'}</td><td><button data-delete>✕</button></td></tr>`}).join('')}</tbody><tfoot><tr><td>Total</td><td>${money(total)}</td><td colspan="4"></td></tr></tfoot></table></div>`}
-function paymentTable(rows,total){return`<div class="table"><table><thead><tr><th>Pago</th><th>Monto</th><th>Destino</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr data-kind="payment" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td>${amount(r)}</td><td><select data-field="account">${options(r.account)}</select></td><td><input data-field="due" type="date" value="${r.due||''}"></td><td><button class="status ${r.paid?'on':''}" data-toggle="paid">${r.paid?'Pagado':'Pendiente'}</button></td><td><button data-delete>✕</button></td></tr>`).join('')}</tbody><tfoot><tr><td>Total</td><td>${money(total)}</td><td colspan="4"></td></tr></tfoot></table></div>`}
-function accountsTable(){return`<div class="table"><table class="accounts"><thead><tr><th>Cuenta</th><th>Anterior</th><th>Cargos</th><th>Pagos</th><th>Final</th><th>Próximo evento</th><th></th></tr></thead><tbody>${state.accounts.map(a=>{const s=accountSummary(a);let event='—';if(a.type==='credit'&&a.cutDay&&a.dueDay)event=`Corte ${friendlyDate(nextCut(a))}<small>Pago ${friendlyDate(nextDue(a))}</small>`;else if(a.type==='credit')event='<span class="warn-text">Configurar</span>';return`<tr><td><b>${esc(a.name)}</b><small>${a.type==='credit'?'Tarjeta':a.type==='savings'?'Ahorro':'Efectivo / banco'}</small></td><td>${money(s.opening)}</td><td>${money(s.charges)}</td><td>${money(s.payments)}</td><td><b>${money(s.projected)}</b></td><td>${event}</td><td><button data-edit="${a.id}">Editar</button></td></tr>`}).join('')}</tbody></table></div>`}
+function paymentTable(rows,total){return`<div class="table"><table><thead><tr><th>Pago</th><th>Monto</th><th>Destino</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr data-kind="payment" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td>${amount(r)}</td><td><div style="display:grid;gap:6px"><select data-field="account">${options(r.account)}</select><select data-field="internal"><option value="false" ${!r.internal?'selected':''}>Pago normal</option><option value="true" ${r.internal?'selected':''}>Transferencia interna</option></select>${r.internal?`<small>Desde</small><select data-field="sourceAccount">${assetOptions(r.sourceAccount,r.account)}</select>`:''}</div></td><td><input data-field="due" type="date" value="${r.due||''}"></td><td><button class="status ${r.paid?'on':''}" data-toggle="paid">${r.paid?'Pagado':'Pendiente'}</button></td><td><button data-delete>✕</button></td></tr>`).join('')}</tbody><tfoot><tr><td>Total</td><td>${money(total)}</td><td colspan="4"></td></tr></tfoot></table></div>`}
+function accountsTable(){return`<div class="table"><table class="accounts"><thead><tr><th>Cuenta</th><th>Anterior</th><th>Entradas / cargos</th><th>Salidas / pagos</th><th>Final</th><th>Próximo evento</th><th></th></tr></thead><tbody>${state.accounts.map(a=>{const s=accountSummary(a);let event='—';if(a.type==='credit'&&a.cutDay&&a.dueDay)event=`Corte ${friendlyDate(nextCut(a))}<small>Pago ${friendlyDate(nextDue(a))}</small>`;else if(a.type==='credit')event='<span class="warn-text">Configurar</span>';return`<tr><td><b>${esc(a.name)}</b><small>${a.type==='credit'?'Tarjeta':a.type==='savings'?'Ahorro':'Efectivo / banco'}</small></td><td>${money(s.opening)}</td><td>${money(s.charges)}</td><td>${money(s.payments)}</td><td><b>${money(s.projected)}</b></td><td>${event}</td><td><button data-edit="${a.id}">Editar</button></td></tr>`}).join('')}</tbody></table></div>`}
 
 function bind(){
   document.querySelector('#month').onchange=e=>{period=`${e.target.value}|${document.querySelector('#half').value}`;render()};
@@ -150,10 +187,36 @@ function bind(){
   document.querySelectorAll('[data-statement]').forEach(b=>b.onclick=()=>markPaid(b.dataset.statement));
   bindMoneyInputs();
 }
-function updateRow(tr,field,value){const p=data(),list=tr.dataset.kind==='income'?p.incomes:tr.dataset.kind==='expense'?p.expenses:p.payments,row=list.find(x=>x.id===tr.dataset.id);if(!row)return;row[field]=field==='amount'?parseMoney(value):value;saveState(state);createStatements();render()}
+function updateRow(tr,field,value){
+  const p=data(),list=tr.dataset.kind==='income'?p.incomes:tr.dataset.kind==='expense'?p.expenses:p.payments,row=list.find(x=>x.id===tr.dataset.id);
+  if(!row)return;
+  if(field==='amount')row[field]=parseMoney(value);
+  else if(field==='internal'){
+    row.internal=value==='true';
+    if(row.internal){
+      if(!validTransferSource(row.sourceAccount,row.account))row.sourceAccount=primaryAssetId(row.account);
+      if(!row.sourceAccount){row.internal=false;alert('Crea primero una cuenta de Efectivo / banco o Ahorro para usarla como origen.');}
+    }else row.sourceAccount='';
+  }else{
+    row[field]=value;
+    if(tr.dataset.kind==='payment'&&field==='account'&&row.internal&&!validTransferSource(row.sourceAccount,row.account))row.sourceAccount=primaryAssetId(row.account);
+  }
+  saveState(state);createStatements();render();
+}
 function toggle(tr,field){const p=data(),list=tr.dataset.kind==='income'?p.incomes:p.payments,row=list.find(x=>x.id===tr.dataset.id);if(!row)return;row[field]=!row[field];if(field==='paid')row.paidDate=row.paid?isoDate(localToday()):'';saveState(state);createStatements();render()}
 function deleteRow(tr){const p=data(),list=tr.dataset.kind==='income'?p.incomes:tr.dataset.kind==='expense'?p.expenses:p.payments,i=list.findIndex(x=>x.id===tr.dataset.id);if(i>=0)list.splice(i,1);saveState(state);render()}
-function addRow(kind){const p=data(),date=isoDate(bounds().end);if(kind==='income')p.incomes.push({id:uid(),desc:'Nuevo ingreso',amount:0,date,received:false});if(kind==='expense')p.expenses.push({id:uid(),desc:'Nuevo gasto',amount:0,account:state.accounts[0]?.id||'',date});if(kind==='payment')p.payments.push({id:uid(),desc:'Nuevo pago',amount:0,account:state.accounts[0]?.id||'',due:date,paid:false,paidDate:''});saveState(state);render()}
+function addRow(kind){
+  const p=data(),date=isoDate(bounds().end),primary=primaryAssetId();
+  if(kind==='income')p.incomes.push({id:uid(),desc:'Nuevo ingreso',amount:0,date,received:false,account:primary});
+  if(kind==='expense')p.expenses.push({id:uid(),desc:'Nuevo gasto',amount:0,account:state.accounts[0]?.id||'',date});
+  if(kind==='payment'){
+    const destination=state.accounts[0]?.id||'';
+    const destinationAccount=account(destination);
+    const internal=Boolean(primary&&destinationAccount&&destinationAccount.id!==primary&&(destinationAccount.type==='credit'||destinationAccount.type==='savings'));
+    p.payments.push({id:uid(),desc:'Nuevo pago',amount:0,account:destination,due:date,paid:false,paidDate:'',internal,sourceAccount:internal?primaryAssetId(destination):''});
+  }
+  saveState(state);render();
+}
 function copyPrevious(){
   const old=state.periods[prevKey()];
   if(!old)return alert('No existe una quincena anterior guardada.');
@@ -165,7 +228,7 @@ function copyPrevious(){
     expenses:old.expenses.map(x=>({...copy(x),id:uid(),date})),
     payments:old.payments.map(x=>({...copy(x),id:uid(),due:date,paid:false,paidDate:''}))
   };
-  saveState(state);render();
+  normalize();render();
 }
 
 function editAccount(id=null){
@@ -216,7 +279,7 @@ function editAccount(id=null){
         state.accounts=[...state.accounts,next];
       }
 
-      saveState(state);
+      normalize();
       close();
       createStatements();
       render();
@@ -231,13 +294,30 @@ function editAccount(id=null){
     m.querySelector('#adel').onclick=()=>{
       if(!confirm(`¿Eliminar ${draft.name}?`))return;
       state.accounts=state.accounts.filter(x=>x.id!==id);
-      Object.values(state.periods).forEach(p=>{p.expenses.forEach(x=>{if(x.account===id)x.account=''});p.payments.forEach(x=>{if(x.account===id)x.account=''})});
+      Object.values(state.periods).forEach(p=>{
+        p.incomes.forEach(x=>{if(x.account===id)x.account=''});
+        p.expenses.forEach(x=>{if(x.account===id)x.account=''});
+        p.payments.forEach(x=>{if(x.account===id)x.account='';if(x.sourceAccount===id)x.sourceAccount=''});
+      });
       state.statements=state.statements.filter(s=>s.cardId!==id);
-      saveState(state);close();render();
+      normalize();close();render();
     };
   }
 }
-function markPaid(id){const s=state.statements.find(x=>x.id===id);if(!s)return;s.paid=true;s.paidDate=isoDate(localToday());let p=data().payments.find(x=>x.account===s.cardId&&!x.paid&&Math.abs(num(x.amount)-num(s.amount))<.01);if(p){p.paid=true;p.paidDate=s.paidDate}else data().payments.push({id:uid(),desc:`Pago de corte · ${account(s.cardId)?.name||'Tarjeta'}`,amount:num(s.amount),account:s.cardId,due:s.dueDate,paid:true,paidDate:s.paidDate});saveState(state);render()}
+function markPaid(id){
+  const s=state.statements.find(x=>x.id===id);if(!s)return;
+  s.paid=true;s.paidDate=isoDate(localToday());
+  let p=data().payments.find(x=>x.account===s.cardId&&!x.paid&&Math.abs(num(x.amount)-num(s.amount))<.01);
+  if(p){
+    p.paid=true;p.paidDate=s.paidDate;
+    if(typeof p.internal!=='boolean')p.internal=true;
+    if(p.internal&&!validTransferSource(p.sourceAccount,p.account))p.sourceAccount=primaryAssetId(p.account);
+  }else{
+    const sourceAccount=primaryAssetId(s.cardId);
+    data().payments.push({id:uid(),desc:`Pago de corte · ${account(s.cardId)?.name||'Tarjeta'}`,amount:num(s.amount),account:s.cardId,due:s.dueDate,paid:true,paidDate:s.paidDate,internal:Boolean(sourceAccount),sourceAccount});
+  }
+  saveState(state);render();
+}
 async function enableNotifications(){if(!('Notification'in window))return alert('Este navegador no soporta notificaciones.');state.settings.browserNotifications=(await Notification.requestPermission())==='granted';saveState(state);render()}
 async function notifyIfNeeded(){if(!state.settings.browserNotifications||!('Notification'in window)||Notification.permission!=='granted')return;for(const a of alerts().filter(x=>x.days<=3&&x.kind!=='setup')){const key=`po:${isoDate(localToday())}:${a.kind}:${a.card.id}`;if(localStorage.getItem(key))continue;new Notification('Presupuesto Online',{body:`${a.card.name}: ${a.kind==='cut'?'corte':'pago'} ${friendlyDate(a.date)} · ${money(a.amount)}`});localStorage.setItem(key,'1')}}
 function explicitSave(){saveState(state);const b=document.querySelector('#save'),old=b.textContent;b.textContent='Guardado ✓';setTimeout(()=>b.textContent=old,900)}
