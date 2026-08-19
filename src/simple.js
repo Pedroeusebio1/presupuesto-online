@@ -19,7 +19,7 @@ const parseMoney=v=>{
   return Number(s)||0;
 };
 const accountingNumber=n=>new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(parseMoney(n));
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const account=id=>state.accounts.find(a=>a.id===id);
 const assetAccounts=()=>state.accounts.filter(a=>a.type==='cash'||a.type==='savings');
 const primaryAssetId=(exclude='')=>assetAccounts().find(a=>a.type==='cash'&&a.id!==exclude)?.id||assetAccounts().find(a=>a.id!==exclude)?.id||'';
@@ -82,10 +82,10 @@ function accountSummaryForPeriod(a,key,seen=new Set()){
   }
 
   const expenseCharges=(p.expenses||[]).filter(x=>x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
-  const incomeInflows=(p.incomes||[]).filter(x=>x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
-  const incomingTransfers=(p.payments||[]).filter(x=>x.internal&&x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
-  const outgoingTransfers=(p.payments||[]).filter(x=>x.internal&&x.sourceAccount===a.id).reduce((s,x)=>s+num(x.amount),0);
-  const regularPayments=(p.payments||[]).filter(x=>!x.internal&&x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
+  const incomeInflows=(p.incomes||[]).filter(x=>x.received&&x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
+  const incomingTransfers=(p.payments||[]).filter(x=>x.paid&&x.internal&&x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
+  const outgoingTransfers=(p.payments||[]).filter(x=>x.paid&&x.internal&&x.sourceAccount===a.id).reduce((s,x)=>s+num(x.amount),0);
+  const regularPayments=(p.payments||[]).filter(x=>x.paid&&!x.internal&&x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
 
   let charges=0,payments=0,projected=opening;
   if(a.type==='credit'){
@@ -156,7 +156,7 @@ ${section('income','Ingresos','Todo lo que entra en esta quincena.',incomeTable(
 ${section('expense','Gastos necesarios para esta quincena','Elige con qué pagarás cada gasto.',expenseTable(p.expenses,expenses),'+ Gasto')}
 ${section('payment','Pagos','Usa “Transferencia interna” cuando el dinero sale de una cuenta tuya hacia otra.',paymentTable(p.payments,payments),'+ Pago')}
 <section class="balance ${free<0?'negative':''}"><div><b>Saldo disponible después de esta quincena</b><span>Ingresos menos pagos y gastos directos</span></div><strong>${money(free)}</strong></section>
-<section class="box"><div class="box-head"><div><h2>Tarjetas y cuentas</h2><p>Los ingresos aumentan tu cuenta principal y las transferencias internas mueven el dinero entre tus cuentas.</p></div><button id="addAccount">+ Cuenta</button></div>${accountsTable()}</section>
+<section class="box"><div class="box-head"><div><h2>Tarjetas y cuentas</h2><p>Los ingresos recibidos aumentan tu cuenta principal y las transferencias pagadas mueven el dinero entre tus cuentas.</p></div><button id="addAccount">+ Cuenta</button></div>${accountsTable()}</section>
 <footer><button id="copy">Copiar quincena anterior</button><button id="notify">${state.settings.browserNotifications?'Avisos activos':'Activar avisos'}</button><button id="export">Exportar</button><label>Importar<input id="import" type="file" accept=".json" hidden></label><button id="save" class="primary">Guardar</button></footer>
 </main>`;
   bind();
