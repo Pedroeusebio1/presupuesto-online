@@ -49,13 +49,8 @@ export function nextCut(card, today=localToday()){
 }
 
 export function nextDue(card, today=localToday()){
-  const recentCut = latestCutOnOrBefore(card, today);
-  let due = dueDateForCut(recentCut, card.dueDay);
-  if (due < today) {
-    const upcomingCut = nextCut(card, today);
-    due = dueDateForCut(upcomingCut, card.dueDay);
-  }
-  return due;
+  const upcomingCut = nextCut(card, today);
+  return dueDateForCut(upcomingCut, card.dueDay);
 }
 
 export function friendlyDate(date){
