@@ -1,6 +1,6 @@
-const CACHE='presupuesto-online-v4';
+const CACHE='presupuesto-online-v5';
 const ASSETS=['/','/index.html','/assets/simple.css','/src/bootstrap.js','/src/cloud.js','/src/simple.js','/src/store.js','/src/dates.js','/manifest.webmanifest'];
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
+self.addEventListener('install',e=>e.waitUntil(Promise.all([self.skipWaiting(),caches.open(CACHE).then(c=>c.addAll(ASSETS))])));
 self.addEventListener('activate',e=>e.waitUntil(Promise.all([
   self.clients.claim(),
   caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
