@@ -35,6 +35,13 @@ function parts(key=period){const [ym,q]=key.split('|');const [y,m]=ym.split('-')
 function bounds(key=period){const {y,m,q}=parts(key);return{start:q===1?new Date(y,m-1,1):new Date(y,m-1,16),end:q===1?new Date(y,m-1,15):new Date(y,m,0)}}
 function prevKey(key=period){const {y,m,q}=parts(key);if(q===2)return`${y}-${String(m).padStart(2,'0')}|1`;const d=new Date(y,m-2,1);return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}|2`}
 function nextKey(key=period){const {y,m,q}=parts(key);if(q===1)return`${y}-${String(m).padStart(2,'0')}|2`;const d=new Date(y,m,1);return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}|1`}
+function periodIndex(key){const {y,m,q}=parts(key);return y*24+(m-1)*2+(q-1)}
+function previousStoredPeriodKey(key){
+  const target=periodIndex(key);
+  return Object.keys(state.periods)
+    .filter(k=>k!==key&&periodIndex(k)<target)
+    .sort((a,b)=>periodIndex(b)-periodIndex(a))[0]||null;
+}
 function allExpenses(){return Object.values(state.periods).flatMap(p=>p.expenses||[])}
 function allPayments(){return Object.values(state.periods).flatMap(p=>p.payments||[])}
 function balanceAt(id,date=null){
@@ -44,16 +51,22 @@ function balanceAt(id,date=null){
   const paid=allPayments().filter(x=>x.account===id&&x.paid&&x.paidDate&&(!max||parseLocalDate(x.paidDate)<=max)).reduce((s,x)=>s+num(x.amount),0);
   return Math.max(0,num(a.baseBalance)+charges-paid);
 }
-function accountSummary(a){
-  const p=data();
-  const {start}=bounds();
-  const before=new Date(start.getFullYear(),start.getMonth(),start.getDate()-1);
-  const opening=a.type==='credit'?balanceAt(a.id,before):num(a.baseBalance);
-  const charges=p.expenses.filter(x=>x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
-  const payments=p.payments.filter(x=>x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
-  const projected=a.type==='credit'?opening+charges-payments:a.type==='savings'?opening+payments-charges:opening-payments-charges;
+function accountSummaryForPeriod(a,key,seen=new Set()){
+  const p=state.periods[key]||{incomes:[],expenses:[],payments:[]};
+  let opening=num(a.baseBalance);
+  const previous=previousStoredPeriodKey(key);
+  if(previous&&!seen.has(previous)){
+    const nextSeen=new Set(seen);
+    nextSeen.add(key);
+    opening=accountSummaryForPeriod(a,previous,nextSeen).projected;
+  }
+  const charges=(p.expenses||[]).filter(x=>x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
+  const payments=(p.payments||[]).filter(x=>x.account===a.id).reduce((s,x)=>s+num(x.amount),0);
+  let projected=a.type==='credit'?opening+charges-payments:a.type==='savings'?opening+payments-charges:opening-payments-charges;
+  if(a.type==='credit')projected=Math.max(0,projected);
   return{opening,charges,payments,projected};
 }
+function accountSummary(a){return accountSummaryForPeriod(a,period)}
 function options(selected){return state.accounts.map(a=>`<option value="${a.id}" ${a.id===selected?'selected':''}>${esc(a.name)}</option>`).join('')}
 function amount(row){return`<div class="money-input"><span>RD$</span><input data-field="amount" data-money type="text" inputmode="decimal" autocomplete="off" value="${accountingNumber(row.amount)}"></div>`}
 function bindMoneyInputs(root=document){
@@ -106,7 +119,7 @@ ${section('income','Ingresos','Todo lo que entra en esta quincena.',incomeTable(
 ${section('expense','Gastos necesarios para esta quincena','Elige con qué pagarás cada gasto.',expenseTable(p.expenses,expenses),'+ Gasto')}
 ${section('payment','Pagos','Salidas reales de dinero de esta quincena.',paymentTable(p.payments,payments),'+ Pago')}
 <section class="balance ${free<0?'negative':''}"><div><b>Saldo disponible después de esta quincena</b><span>Ingresos menos pagos y gastos directos</span></div><strong>${money(free)}</strong></section>
-<section class="box"><div class="box-head"><div><h2>Tarjetas y cuentas</h2><p>Saldo anterior + cargos − pagos = saldo proyectado.</p></div><button id="addAccount">+ Cuenta</button></div>${accountsTable()}</section>
+<section class="box"><div class="box-head"><div><h2>Tarjetas y cuentas</h2><p>El balance final anterior pasa automáticamente como balance inicial de la siguiente quincena.</p></div><button id="addAccount">+ Cuenta</button></div>${accountsTable()}</section>
 <footer><button id="copy">Copiar quincena anterior</button><button id="notify">${state.settings.browserNotifications?'Avisos activos':'Activar avisos'}</button><button id="export">Exportar</button><label>Importar<input id="import" type="file" accept=".json" hidden></label><button id="save" class="primary">Guardar</button></footer>
 </main>`;
   bind();
@@ -116,7 +129,7 @@ function section(kind,title,subtitle,table,button){return`<section class="box"><
 function incomeTable(rows,total){return`<div class="table"><table><thead><tr><th>Ingreso</th><th>Monto</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr data-kind="income" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td>${amount(r)}</td><td><input data-field="date" type="date" value="${r.date||''}"></td><td><button class="status ${r.received?'on':''}" data-toggle="received">${r.received?'Recibido':'Pendiente'}</button></td><td><button data-delete>✕</button></td></tr>`).join('')}</tbody><tfoot><tr><td>Total</td><td>${money(total)}</td><td colspan="3"></td></tr></tfoot></table></div>`}
 function expenseTable(rows,total){return`<div class="table"><table><thead><tr><th>Gasto</th><th>Monto</th><th>Método</th><th>Corte</th><th>Pago límite</th><th></th></tr></thead><tbody>${rows.map(r=>{const a=account(r.account);return`<tr data-kind="expense" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td>${amount(r)}</td><td><select data-field="account">${options(r.account)}</select></td><td>${a?.type==='credit'&&a.cutDay?`Día ${a.cutDay}`:'—'}</td><td>${a?.type==='credit'&&a.dueDay?`Día ${a.dueDay}`:'—'}</td><td><button data-delete>✕</button></td></tr>`}).join('')}</tbody><tfoot><tr><td>Total</td><td>${money(total)}</td><td colspan="4"></td></tr></tfoot></table></div>`}
 function paymentTable(rows,total){return`<div class="table"><table><thead><tr><th>Pago</th><th>Monto</th><th>Destino</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr data-kind="payment" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td>${amount(r)}</td><td><select data-field="account">${options(r.account)}</select></td><td><input data-field="due" type="date" value="${r.due||''}"></td><td><button class="status ${r.paid?'on':''}" data-toggle="paid">${r.paid?'Pagado':'Pendiente'}</button></td><td><button data-delete>✕</button></td></tr>`).join('')}</tbody><tfoot><tr><td>Total</td><td>${money(total)}</td><td colspan="4"></td></tr></tfoot></table></div>`}
-function accountsTable(){return`<div class="table"><table class="accounts"><thead><tr><th>Cuenta</th><th>Anterior</th><th>Cargos</th><th>Pagos</th><th>Proyectado</th><th>Próximo evento</th><th></th></tr></thead><tbody>${state.accounts.map(a=>{const s=accountSummary(a);let event='—';if(a.type==='credit'&&a.cutDay&&a.dueDay)event=`Corte ${friendlyDate(nextCut(a))}<small>Pago ${friendlyDate(nextDue(a))}</small>`;else if(a.type==='credit')event='<span class="warn-text">Configurar</span>';return`<tr><td><b>${esc(a.name)}</b><small>${a.type==='credit'?'Tarjeta':a.type==='savings'?'Ahorro':'Efectivo / banco'}</small></td><td>${money(s.opening)}</td><td>${money(s.charges)}</td><td>${money(s.payments)}</td><td><b>${money(s.projected)}</b></td><td>${event}</td><td><button data-edit="${a.id}">Editar</button></td></tr>`}).join('')}</tbody></table></div>`}
+function accountsTable(){return`<div class="table"><table class="accounts"><thead><tr><th>Cuenta</th><th>Anterior</th><th>Cargos</th><th>Pagos</th><th>Final</th><th>Próximo evento</th><th></th></tr></thead><tbody>${state.accounts.map(a=>{const s=accountSummary(a);let event='—';if(a.type==='credit'&&a.cutDay&&a.dueDay)event=`Corte ${friendlyDate(nextCut(a))}<small>Pago ${friendlyDate(nextDue(a))}</small>`;else if(a.type==='credit')event='<span class="warn-text">Configurar</span>';return`<tr><td><b>${esc(a.name)}</b><small>${a.type==='credit'?'Tarjeta':a.type==='savings'?'Ahorro':'Efectivo / banco'}</small></td><td>${money(s.opening)}</td><td>${money(s.charges)}</td><td>${money(s.payments)}</td><td><b>${money(s.projected)}</b></td><td>${event}</td><td><button data-edit="${a.id}">Editar</button></td></tr>`}).join('')}</tbody></table></div>`}
 
 function bind(){
   document.querySelector('#month').onchange=e=>{period=`${e.target.value}|${document.querySelector('#half').value}`;render()};
@@ -144,9 +157,14 @@ function addRow(kind){const p=data(),date=isoDate(bounds().end);if(kind==='incom
 function copyPrevious(){
   const old=state.periods[prevKey()];
   if(!old)return alert('No existe una quincena anterior guardada.');
-  if((data().incomes.length||data().expenses.length||data().payments.length)&&!confirm('Esta quincena ya tiene datos. ¿Reemplazarlos?'))return;
+  if((data().incomes.length||data().expenses.length||data().payments.length)&&!confirm('Esta quincena ya tiene datos. ¿Reemplazar solo ingresos, gastos y pagos? Los balances se conservarán.'))return;
   const date=isoDate(bounds().end),copy=x=>JSON.parse(JSON.stringify(x));
-  state.periods[period]={incomes:old.incomes.map(x=>({...copy(x),id:uid(),date,received:false})),expenses:old.expenses.map(x=>({...copy(x),id:uid(),date})),payments:old.payments.map(x=>({...copy(x),id:uid(),due:date,paid:false,paidDate:''}))};
+  state.periods[period]={
+    ...state.periods[period],
+    incomes:old.incomes.map(x=>({...copy(x),id:uid(),date,received:false})),
+    expenses:old.expenses.map(x=>({...copy(x),id:uid(),date})),
+    payments:old.payments.map(x=>({...copy(x),id:uid(),due:date,paid:false,paidDate:''}))
+  };
   saveState(state);render();
 }
 
