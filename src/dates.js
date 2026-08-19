@@ -21,21 +21,26 @@ export function daysBetween(from, to){
   return Math.round(ms/86400000);
 }
 
+function safeDate(year, monthIndex, day){
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return new Date(year, monthIndex, Math.min(Math.max(Number(day)||1, 1), lastDay));
+}
+
 export function nextOccurrence(day, from=localToday()){
-  let d = new Date(from.getFullYear(), from.getMonth(), day);
-  if (d < from) d = new Date(from.getFullYear(), from.getMonth()+1, day);
+  let d = safeDate(from.getFullYear(), from.getMonth(), day);
+  if (d < from) d = safeDate(from.getFullYear(), from.getMonth()+1, day);
   return d;
 }
 
 export function dueDateForCut(cutDate, dueDay){
-  let due = new Date(cutDate.getFullYear(), cutDate.getMonth(), dueDay);
-  if (due <= cutDate) due = new Date(cutDate.getFullYear(), cutDate.getMonth()+1, dueDay);
+  let due = safeDate(cutDate.getFullYear(), cutDate.getMonth(), dueDay);
+  if (due <= cutDate) due = safeDate(cutDate.getFullYear(), cutDate.getMonth()+1, dueDay);
   return due;
 }
 
 export function latestCutOnOrBefore(card, today=localToday()){
-  let d = new Date(today.getFullYear(), today.getMonth(), card.cutDay);
-  if (d > today) d = new Date(today.getFullYear(), today.getMonth()-1, card.cutDay);
+  let d = safeDate(today.getFullYear(), today.getMonth(), card.cutDay);
+  if (d > today) d = safeDate(today.getFullYear(), today.getMonth()-1, card.cutDay);
   return d;
 }
 
