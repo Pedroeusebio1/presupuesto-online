@@ -1,4 +1,4 @@
-const CACHE='presupuesto-online-v2';
+const CACHE='presupuesto-online-v3';
 const ASSETS=['/','/index.html','/assets/simple.css','/src/bootstrap.js','/src/cloud.js','/src/simple.js','/src/store.js','/src/dates.js','/manifest.webmanifest'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener('activate',e=>e.waitUntil(Promise.all([
