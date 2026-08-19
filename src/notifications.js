@@ -18,7 +18,6 @@ function balanceAt(state,id,date=null){
   const paid=allPayments(state).filter(x=>x.account===id&&x.paid&&x.paidDate&&(!max||parseLocalDate(x.paidDate)<=max)).reduce((s,x)=>s+num(x.amount),0);
   return Math.max(0,num(card.baseBalance)+charges-paid);
 }
-function cardAvailable(card,balance){return card.limit?Math.max(0,num(card.limit)-balance):0}
 function statementDue(card,statement){
   const cut=parseLocalDate(statement?.cutDate);
   return cut&&card?.dueDay?dueDateForCut(cut,card.dueDay):parseLocalDate(statement?.dueDate);
@@ -33,30 +32,27 @@ function firstUnpaid(state,card){
 function whenText(days){return days<0?`${Math.abs(days)} días vencido`:days===0?'hoy':days===1?'mañana':`en ${days} días`}
 function detailFor(state,card,kind,statement=null){
   const today=localToday();
-  const balance=balanceAt(state,card.id);
-  const available=cardAvailable(card,balance);
   if(kind==='due'){
     const current=statement?{statement,due:statementDue(card,statement)}:firstUnpaid(state,card);
     if(!current?.due)return null;
-    const cut=parseLocalDate(current.statement.cutDate);
     const days=daysBetween(today,current.due);
     return{
       date:current.due,
       days,
       amount:num(current.statement.amount),
       title:`${card.name} vence ${whenText(days)}`,
-      body:`Pago ${friendlyDate(current.due)} · A pagar ${money(current.statement.amount)} · Balance ${money(balance)}${card.limit?` · Disponible ${money(available)}`:''}${cut?` · Corte ${friendlyDate(cut)}`:''}`
+      body:`${friendlyDate(current.due)} · ${money(current.statement.amount)}`
     };
   }
   const cut=nextCut(card,today);
-  const due=card.dueDay?dueDateForCut(cut,card.dueDay):null;
   const days=daysBetween(today,cut);
+  const balance=balanceAt(state,card.id);
   return{
     date:cut,
     days,
     amount:balance,
     title:`${card.name} corta ${whenText(days)}`,
-    body:`Corte ${friendlyDate(cut)} · Balance ${money(balance)}${card.limit?` · Límite ${money(card.limit)} · Disponible ${money(available)}`:''}${due?` · Pago límite ${friendlyDate(due)}`:''}`
+    body:`${friendlyDate(cut)} · ${money(balance)}`
   };
 }
 function findCardFromNotice(state,notice){
@@ -92,7 +88,7 @@ function cardFingerprint(state,card){
   const balance=balanceAt(state,card.id);
   const unpaid=firstUnpaid(state,card);
   return JSON.stringify({
-    name:card.name,type:card.type,cutDay:card.cutDay,dueDay:card.dueDay,limit:num(card.limit),balance,
+    name:card.name,type:card.type,cutDay:card.cutDay,dueDay:card.dueDay,balance,
     due:unpaid?.due?isoDate(unpaid.due):'',dueAmount:num(unpaid?.statement?.amount)
   });
 }
@@ -129,7 +125,12 @@ function enhancedOptions(options={}){
   const kind=body.includes(': corte')?'cut':body.includes(': pago')?'due':null;
   if(!kind)return options;
   const detail=detailFor(state,card,kind);
-  return detail?{...options,body:detail.body,tag:`presupuesto-${kind}-${card.id}`}:options;
+  if(!detail)return options;
+  return{
+    ...options,
+    body:`${card.name}: ${kind==='cut'?'corte':'pago'} ${friendlyDate(detail.date)} · ${money(detail.amount)}`,
+    tag:`presupuesto-${kind}-${card.id}`
+  };
 }
 export function installCardNotificationEnhancer(){
   installStorageWatcher();
