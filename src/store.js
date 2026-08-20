@@ -38,15 +38,21 @@ export const demoState = {
 
 export function clone(value){ return JSON.parse(JSON.stringify(value)); }
 
+function exposeState(state){
+  if(typeof globalThis!=='undefined')globalThis.__presupuestoOnlineState=state;
+  return state;
+}
+
 export function loadState(){
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : clone(demoState);
+    return exposeState(raw ? JSON.parse(raw) : clone(demoState));
   } catch {
-    return clone(demoState);
+    return exposeState(clone(demoState));
   }
 }
 
 export function saveState(state){
+  exposeState(state);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
