@@ -140,8 +140,14 @@ export function installPaymentSourceFix(){
     injectStyles();
     enhanceAll();
     const refresh=()=>setTimeout(()=>{try{enhanceAll()}catch(error){console.error('Payment source refresh failed',error)}},0);
-    document.addEventListener('change',refresh);
-    document.addEventListener('click',refresh);
+
+    document.addEventListener('change',event=>{
+      if(event.target.closest('tr[data-kind="payment"],#month,#half'))refresh();
+    });
+
+    document.addEventListener('click',event=>{
+      if(event.target.closest('[data-add],#prev,#next,#copy,[data-delete],[data-toggle],[data-statement]'))refresh();
+    });
   }catch(error){
     console.error('Payment source fix failed',error);
   }
