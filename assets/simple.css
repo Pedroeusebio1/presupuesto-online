@@ -111,3 +111,18 @@
   .money-input span{font-size:9px}
   .accounts tbody tr{grid-template-columns:1fr 1fr}
 }
+
+/* Flujo visual seguro de pagos: no cambia JavaScript ni datos. */
+table:has(tbody tr[data-kind="payment"]) thead th:nth-child(3){font-size:0}
+table:has(tbody tr[data-kind="payment"]) thead th:nth-child(3)::after{content:"Desde / Destino";font-size:9px}
+tr[data-kind="payment"] td:nth-child(3)>div{display:grid!important;gap:6px!important}
+tr[data-kind="payment"] td:nth-child(3)>div::before,
+tr[data-kind="payment"] td:nth-child(3)>div::after{display:block;color:var(--muted);font-size:9px;line-height:1;text-transform:uppercase;letter-spacing:.07em;font-weight:900;margin-top:2px}
+tr[data-kind="payment"] td:nth-child(3)>div::before{content:"Desde";order:0}
+tr[data-kind="payment"] td:nth-child(3)>div>small{display:none}
+tr[data-kind="payment"] td:nth-child(3)>div select[data-field="account"]{order:1}
+tr[data-kind="payment"] td:nth-child(3)>div select[data-field="internal"]{order:2}
+tr[data-kind="payment"] td:nth-child(3)>div:has(select[data-field="sourceAccount"]) select[data-field="sourceAccount"]{order:1}
+tr[data-kind="payment"] td:nth-child(3)>div:has(select[data-field="sourceAccount"])::after{content:"Destino";order:3}
+tr[data-kind="payment"] td:nth-child(3)>div:has(select[data-field="sourceAccount"]) select[data-field="account"]{order:4}
+@media(max-width:760px){tr[data-kind="payment"] td:nth-child(3)::before{display:none!important}}
