@@ -73,7 +73,7 @@ function balanceAt(id,date=null){
 }
 function accountSummaryForPeriod(a,key,seen=new Set()){
   const p=state.periods[key]||{incomes:[],expenses:[],payments:[]};
-  let opening=num(a.baseBalance);
+  let opening=a.type==='credit'?-Math.abs(num(a.baseBalance)):num(a.baseBalance);
   const previous=previousStoredPeriodKey(key);
   if(previous&&!seen.has(previous)){
     const nextSeen=new Set(seen);
@@ -91,7 +91,7 @@ function accountSummaryForPeriod(a,key,seen=new Set()){
   if(a.type==='credit'){
     charges=expenseCharges;
     payments=incomingTransfers+regularPayments;
-    projected=Math.max(0,opening+charges-payments);
+    projected=Math.min(0,opening-charges+payments);
   }else{
     charges=incomeInflows+incomingTransfers;
     payments=expenseCharges+regularPayments+outgoingTransfers;
@@ -156,7 +156,7 @@ ${section('income','Ingresos','Todo lo que entra en esta quincena.',incomeTable(
 ${section('expense','Gastos necesarios para esta quincena','Elige con qué pagarás cada gasto.',expenseTable(p.expenses,expenses),'+ Gasto')}
 ${section('payment','Pagos','Usa “Transferencia interna” cuando el dinero sale de una cuenta tuya hacia otra.',paymentTable(p.payments,payments),'+ Pago')}
 <section class="balance ${free<0?'negative':''}"><div><b>Saldo disponible después de esta quincena</b><span>Ingresos menos pagos y gastos directos</span></div><strong>${money(free)}</strong></section>
-<section class="box"><div class="box-head"><div><h2>Tarjetas y cuentas</h2><p>Los ingresos recibidos aumentan tu cuenta principal y las transferencias pagadas mueven el dinero entre tus cuentas.</p></div><button id="addAccount">+ Cuenta</button></div>${accountsTable()}</section>
+<section class="box"><div class="box-head"><div><h2>Tarjetas y cuentas</h2><p>Las cuentas y ahorros crecen en positivo; las tarjetas muestran en negativo lo que debes.</p></div><button id="addAccount">+ Cuenta</button></div>${accountsTable()}</section>
 <footer><button id="copy">Copiar quincena anterior</button><button id="notify">${state.settings.browserNotifications?'Avisos activos':'Activar avisos'}</button><button id="export">Exportar</button><label>Importar<input id="import" type="file" accept=".json" hidden></label><button id="save" class="primary">Guardar</button></footer>
 </main>`;
   bind();
@@ -166,7 +166,7 @@ function section(kind,title,subtitle,table,button){return`<section class="box"><
 function incomeTable(rows,total){return`<div class="table"><table><thead><tr><th>Ingreso</th><th>Monto</th><th>Fecha</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr data-kind="income" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td>${amount(r)}</td><td><input data-field="date" type="date" value="${r.date||''}"></td><td><button class="status ${r.received?'on':''}" data-toggle="received">${r.received?'Recibido':'Pendiente'}</button></td><td><button data-delete>✕</button></td></tr>`).join('')}</tbody><tfoot><tr><td>Total</td><td>${money(total)}</td><td colspan="3"></td></tr></tfoot></table></div>`}
 function expenseTable(rows,total){return`<div class="table"><table><thead><tr><th>Gasto</th><th>Monto</th><th>Método</th><th>Corte</th><th>Pago límite</th><th></th></tr></thead><tbody>${rows.map(r=>{const a=account(r.account);return`<tr data-kind="expense" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td>${amount(r)}</td><td><select data-field="account">${options(r.account)}</select></td><td>${a?.type==='credit'&&a.cutDay?`Día ${a.cutDay}`:'—'}</td><td>${a?.type==='credit'&&a.dueDay?`Día ${a.dueDay}`:'—'}</td><td><button data-delete>✕</button></td></tr>`}).join('')}</tbody><tfoot><tr><td>Total</td><td>${money(total)}</td><td colspan="4"></td></tr></tfoot></table></div>`}
 function paymentTable(rows,total){return`<div class="table"><table><thead><tr><th>Pago</th><th>Monto</th><th>Destino</th><th>Fecha límite</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr data-kind="payment" data-id="${r.id}"><td><input data-field="desc" value="${esc(r.desc)}"></td><td>${amount(r)}</td><td><div style="display:grid;gap:6px"><select data-field="account">${options(r.account)}</select><select data-field="internal"><option value="false" ${!r.internal?'selected':''}>Pago normal</option><option value="true" ${r.internal?'selected':''}>Transferencia interna</option></select>${r.internal?`<small>Desde</small><select data-field="sourceAccount">${assetOptions(r.sourceAccount,r.account)}</select>`:''}</div></td><td><input data-field="due" type="date" value="${r.due||''}"></td><td><button class="status ${r.paid?'on':''}" data-toggle="paid">${r.paid?'Pagado':'Pendiente'}</button></td><td><button data-delete>✕</button></td></tr>`).join('')}</tbody><tfoot><tr><td>Total</td><td>${money(total)}</td><td colspan="4"></td></tr></tfoot></table></div>`}
-function accountsTable(){return`<div class="table"><table class="accounts"><thead><tr><th>Cuenta</th><th>Anterior</th><th>Entradas / cargos</th><th>Salidas / pagos</th><th>Final</th><th>Próximo evento</th><th></th></tr></thead><tbody>${state.accounts.map(a=>{const s=accountSummary(a);let event='—';if(a.type==='credit'&&a.cutDay&&a.dueDay)event=`Corte ${friendlyDate(nextCut(a))}<small>Pago ${friendlyDate(nextDue(a))}</small>`;else if(a.type==='credit')event='<span class="warn-text">Configurar</span>';return`<tr><td><b>${esc(a.name)}</b><small>${a.type==='credit'?'Tarjeta':a.type==='savings'?'Ahorro':'Efectivo / banco'}</small></td><td>${money(s.opening)}</td><td>${money(s.charges)}</td><td>${money(s.payments)}</td><td><b>${money(s.projected)}</b></td><td>${event}</td><td><button data-edit="${a.id}">Editar</button></td></tr>`}).join('')}</tbody></table></div>`}
+function accountsTable(){return`<div class="table"><table class="accounts"><thead><tr><th>Cuenta</th><th>Anterior</th><th>Entradas / cargos</th><th>Salidas / pagos</th><th>Saldo</th><th>Próximo evento</th><th></th></tr></thead><tbody>${state.accounts.map(a=>{const s=accountSummary(a);let event='—';if(a.type==='credit'&&a.cutDay&&a.dueDay)event=`Corte ${friendlyDate(nextCut(a))}<small>Pago ${friendlyDate(nextDue(a))}</small>`;else if(a.type==='credit')event='<span class="warn-text">Configurar</span>';return`<tr><td><b>${esc(a.name)}</b><small>${a.type==='credit'?'Tarjeta':a.type==='savings'?'Ahorro':'Efectivo / banco'}</small></td><td>${money(s.opening)}</td><td>${money(s.charges)}</td><td>${money(s.payments)}</td><td><b>${money(s.projected)}</b></td><td>${event}</td><td><button data-edit="${a.id}">Editar</button></td></tr>`}).join('')}</tbody></table></div>`}
 
 function bind(){
   document.querySelector('#month').onchange=e=>{period=`${e.target.value}|${document.querySelector('#half').value}`;render()};
