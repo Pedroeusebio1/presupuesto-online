@@ -49,8 +49,20 @@ function periodScore(key){
   return Number(match[1])*24+(Number(match[2])-1)*2+(Number(match[3])-1);
 }
 
+function sortedPeriodKeys(periods){
+  return Object.keys(periods||{}).filter(k=>periodScore(k)>=0).sort((a,b)=>periodScore(a)-periodScore(b));
+}
+
 function latestPeriodKey(periods){
-  return Object.keys(periods||{}).filter(k=>periodScore(k)>=0).sort((a,b)=>periodScore(b)-periodScore(a))[0]||'';
+  return sortedPeriodKeys(periods).at(-1)||'';
+}
+
+function describePeriod(key){
+  const match=/^(\d{4})-(\d{2})\|(1|2)$/.exec(key);
+  if(!match)return key;
+  const year=Number(match[1]),month=Number(match[2]),half=match[3];
+  const monthName=new Date(year,month-1,1).toLocaleDateString('es-DO',{month:'short',year:'numeric'});
+  return `${half==='1'?'1ra.':'2da.'} ${monthName}`;
 }
 
 export function migrateBudgetBackup(raw){
@@ -81,7 +93,7 @@ export function migrateBudgetBackup(raw){
   const periods={};
   const sourcePeriods=isObject(source.periods)?source.periods:{};
   Object.entries(sourcePeriods).forEach(([key,p])=>{
-    if(!isObject(p))return;
+    if(!isObject(p)||periodScore(key)<0)return;
 
     const incomes=(Array.isArray(p.incomes)?p.incomes:[]).filter(isObject).map(row=>{
       let destination=row.account??row.accountId??'';
@@ -152,8 +164,10 @@ export function migrateBudgetBackup(raw){
     ? sourceSettings.notificationDays.map(numberValue).filter(n=>n>=0&&n<=60)
     : [7,3,1];
 
+  if(!Object.keys(periods).length)throw new Error('El respaldo no contiene ninguna quincena válida.');
+
   return{
-    schemaVersion:3,
+    schemaVersion:4,
     settings:{
       ...sourceSettings,
       notificationDays:notificationDays.length?notificationDays:[7,3,1],
@@ -170,18 +184,22 @@ function replaceObjectContents(target,next){
   Object.assign(target,next);
 }
 
-function renderImportedPeriod(next){
+function showImportedPeriod(next){
+  const target=latestPeriodKey(next.periods);
+  if(!target)return '';
   const month=document.querySelector('#month');
   const half=document.querySelector('#half');
-  if(!month||!half)return;
-  const current=`${month.value}|${half.value}`;
-  const target=next.periods[current]?current:latestPeriodKey(next.periods);
-  if(target){
-    const [ym,q]=target.split('|');
-    month.value=ym;
-    half.value=q;
-  }
+  if(!month||!half)return target;
+
+  const [ym,q]=target.split('|');
+  month.value=ym;
+  half.value=q;
   half.dispatchEvent(new Event('change',{bubbles:true}));
+  return target;
+}
+
+function countMovements(periods){
+  return Object.values(periods).reduce((total,p)=>total+(p.incomes?.length||0)+(p.expenses?.length||0)+(p.payments?.length||0),0);
 }
 
 async function importBackup(file,input){
@@ -190,14 +208,28 @@ async function importBackup(file,input){
   const active=globalThis.__presupuestoOnlineState;
   if(!isObject(active))throw new Error('No pude acceder al estado activo de la aplicación.');
 
+  const keys=sortedPeriodKeys(migrated.periods);
+  const expectedMovements=countMovements(migrated.periods);
+
   replaceObjectContents(active,migrated);
   saveState(active);
-  input.value='';
-  renderImportedPeriod(migrated);
 
-  const periodCount=Object.keys(migrated.periods).length;
-  const movementCount=Object.values(migrated.periods).reduce((total,p)=>total+p.incomes.length+p.expenses.length+p.payments.length,0);
-  alert(`Respaldo importado correctamente.\n${migrated.accounts.length} cuentas · ${periodCount} quincenas · ${movementCount} movimientos.`);
+  const stored=JSON.parse(localStorage.getItem('presupuesto-online-dark-v2')||'{}');
+  const storedKeys=sortedPeriodKeys(stored.periods||{});
+  const storedMovements=countMovements(stored.periods||{});
+  if(storedKeys.length!==keys.length||storedMovements!==expectedMovements){
+    throw new Error('La verificación del respaldo falló. No se guardaron todas las quincenas.');
+  }
+
+  input.value='';
+  const opened=showImportedPeriod(migrated);
+
+  const list=keys.map(describePeriod).join(' · ');
+  const single=keys.length===1
+    ? `\n\nImportante: este archivo solamente contiene una quincena (${describePeriod(keys[0])}).`
+    : `\n\nQuincenas importadas: ${list}`;
+
+  alert(`Respaldo importado COMPLETO.\n${migrated.accounts.length} cuentas · ${keys.length} quincenas · ${expectedMovements} movimientos.\nAbriendo ${describePeriod(opened)}.${single}`);
 }
 
 export function installImportFix(){
